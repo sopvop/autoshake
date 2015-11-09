@@ -15,7 +15,6 @@ import           Text.Trifecta.Parser      (Parser)
 import qualified Text.Trifecta.Parser      as Trifecta
 import           Text.Trifecta.Result      (Result)
 
-
 import           Text.Parser.Combinators   (eof, many, (<?>))
 import           Text.Parser.Token         (IdentifierStyle, braces, brackets,
                                             colon, comma, commaSep, ident,
@@ -23,69 +22,73 @@ import           Text.Parser.Token         (IdentifierStyle, braces, brackets,
                                             symbol, symbolic, textSymbol)
 import           Text.Parser.Token.Style   (emptyIdents)
 
-import           AutoShake.Ast             (Expr (..), Identifier (..),
+import           AutoShake.Ast             (BoolTerm (..), Command (..),
+                                            Expr (..), Identifier (..),
                                             IntTerm (..), Scope (..),
                                             ScopeAct (..), ScopeOp (..),
-                                            StringTerm (..), Target (..),
-                                            TargetPath (..), Term (..),
-                                            TopItem (..))
+                                            StringTerm (..), TargetPath (..),
+                                            Term (..), TopItem (..))
 
 identifier :: Parser (Identifier Delta)
-identifier = Identifier <$> ident emptyIdents <*> position
+identifier = flip Identifier <$> position <*> ident emptyIdents
              <?> "identifier"
 
+boolTerm :: Parser (BoolTerm Delta)
+boolTerm = flip BoolTerm <$> position <*> ( True <$ symbol "true" <|> False <$ symbol "false")
+
 stringTerm :: Parser (StringTerm Delta)
-stringTerm = StringTerm <$> stringLiteral <*> position
+stringTerm = flip StringTerm <$> position <*> stringLiteral
              <?> "string"
 
 intTerm :: Parser (IntTerm Delta)
-intTerm = IntTerm . fromInteger <$> integer <*> position
+intTerm = flip (IntTerm . fromInteger) <$> position <*> integer
           <?> "integer"
 
 stringList :: Parser [StringTerm Delta]
 stringList = brackets $ commaSep stringTerm
              <?> "string List"
 
-value :: Parser (Term () Delta)
+value :: Parser (Term Delta)
 value = TString <$> stringTerm
         <|> TInt <$> intTerm
-        <|> TStringList <$> stringList <*> position
+        <|> flip TStringList <$> position <*> stringList
+        <|> TBool <$> boolTerm
         <?> "value"
 
-expr :: Parser (Expr () Delta)
-expr = ETerm () <$> value
-       <|> ECall () <$> identifier <*> parens (commaSep expr)
+expr :: Parser (Expr Delta)
+expr = ETerm <$> value
+       <|> ECall <$> identifier <*> parens (commaSep expr)
 
 scopeOp :: Parser ScopeOp
 scopeOp = ScopeAssign <$ symbolic '='
-          <|> ScopeUnion <$ symbol "+="
+          <|> ScopeAppend <$ symbol "+="
           <|> ScopeDiff <$ symbol "-="
           <?> "operator"
 
 
-scopeAct :: Parser (ScopeAct () Delta)
+scopeAct :: Parser (ScopeAct Delta)
 scopeAct = ScopeAct <$> identifier <*> scopeOp <*> expr
 
-scope = Scope <$> braces (many scopeAct)
+scope = flip Scope <$> position <*> braces (many scopeAct)
 
-target = (\i n scope -> Target i n scope)
+target = (\i n sc -> Command i n sc)
          <$> identifier
          <*> parens identifier
          <*> scope
          <?> "target"
 
-topItem :: Parser (TopItem () Delta)
+topItem :: Parser (TopItem Delta)
 topItem = (\pos s -> TopInclude s pos)
-          <$> (symbol "include" *> position) <*> stringLiteral
+          <$> (position <* symbol "include") <*> stringLiteral
           <|> TopTarget <$> target
 
-configFile :: Parser [TopItem () Delta]
+configFile :: Parser [TopItem Delta]
 configFile = many topItem <* eof
 
 parseByteString :: ByteString
                 -> ByteString
-                -> Text.Trifecta.Result.Result [TopItem () Delta]
+                -> Text.Trifecta.Result.Result [TopItem Delta]
 parseByteString fn = Trifecta.parseByteString configFile (Directed fn 0 0 0 0)
 
-parseFile :: MonadIO m => String -> m (Maybe [TopItem () Delta])
+parseFile :: MonadIO m => String -> m (Maybe [TopItem Delta])
 parseFile fn = Trifecta.parseFromFile configFile fn

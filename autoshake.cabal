@@ -23,7 +23,8 @@ executable autoshake
                 AutoShake.Core
                 AutoShake.Parser
   -- other-extensions:
-  build-depends:       base >=4.8 && <4.9
+  build-depends:       ansi-wl-pprint >= 0.6.7.3 && < 0.7
+                     , base >=4.8 && <4.9
                      , bytestring >= 0.10.6.0 && < 0.11
                      , filepath >= 1.4.0.0 && < 1.5
                      , lens >= 4.12.3 && < 4.13
